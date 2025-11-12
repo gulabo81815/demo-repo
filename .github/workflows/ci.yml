@@ -35,7 +35,7 @@ jobs:
 
       - name: Run Docker Container
         run: |
-          echo" Running Container"
+          echo "Running Container"
           docker run -p 5000:5000 flask-notes:01
 
       - name: Cleanup
