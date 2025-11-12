@@ -1,0 +1,60 @@
+services:
+    nginx:
+        image: nginx:latest
+        container_name: flasknotes_nginx
+        ports:
+            - "80:80"
+        volumes:
+            - ./nginx.conf:/etc/nginx/conf.d/default.conf
+        networks:
+            - flasknotes_network
+        depends_on:
+            - application
+
+    application:
+        build: .
+        ports:
+            - "5000"
+        container_name: flasknotes_app
+        networks:
+            - flasknotes_network
+        depends_on:
+            database:
+                condition: service_healthy
+        environment:
+            MYSQL_HOST: database # refer to database service name
+            MYSQL_USER: root
+            MYSQL_PASSWORD: root
+            MYSQL_DB: flasknotes
+
+    database:
+        image: mysql:8.0
+        environment:
+            MYSQL_ROOT_PASSWORD: root
+            MYSQL_DATABASE: flasknotes
+        container_name: mysql_db
+        volumes:
+            - db_data:/var/lib/mysql
+            - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+        networks:
+            - flasknotes_network
+        healthcheck:
+            test:
+                [
+                    "CMD",
+                    "mysqladmin",
+                    "ping",
+                    "-h",
+                    "localhost",
+                    "-p${MYSQL_ROOT_PASSWORD}",
+                ]
+            interval: 10s
+            retries: 5
+            start_period: 20s
+
+volumes:
+    db_data:
+
+networks:
+    flasknotes_network:
+        driver: bridge
