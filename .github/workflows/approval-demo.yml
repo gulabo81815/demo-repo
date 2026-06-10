@@ -1,0 +1,64 @@
+name: Approval Demo
+
+on:
+  workflow_dispatch:
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Fake Build
+        run: |
+          echo "Building..."
+          sleep 10
+
+      - name: Send Approval Mail
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+
+          subject: "Approval Required"
+
+          from: Github Actions
+
+          to: yourmail@gmail.com
+
+          html_body: |
+            <h2>Approval Required</h2>
+
+            <p>
+            Build completed successfully.
+            Deployment is waiting for approval.
+            </p>
+
+            <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}">
+              Open Approval Page
+            </a>
+
+  approval:
+    needs: build
+
+    runs-on: ubuntu-latest
+
+    environment:
+      name: demo-approval
+
+    steps:
+      - run: echo "Approved"
+
+  deploy:
+    needs: approval
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - run: |
+          echo "Deploying..."
+          sleep 10
+
+      - run: echo "Deployment completed"
