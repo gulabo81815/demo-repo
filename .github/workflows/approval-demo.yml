@@ -3,42 +3,77 @@ name: Approval Demo
 on:
   workflow_dispatch:
 
+env:
+  DEPLOYMENT_ON: DEMO
+
 jobs:
 
   build:
     runs-on: ubuntu-latest
 
+    outputs:
+      build_time: ${{ steps.capture.outputs.build_time }}
+
     steps:
+      - name: Capture Build Time
+        id: capture
+        run: |
+          TIME=$(date '+%d-%b-%Y %I:%M:%S %p UTC')
+          echo "build_time=$TIME" >> $GITHUB_OUTPUT
+
       - name: Fake Build
         run: |
-          echo "Building..."
+          echo "Building application..."
           sleep 10
+          echo "Build completed"
 
-      - name: Send Approval Mail
+      - name: Send Approval Request Email
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 587
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
+          secure: false
 
-          subject: "Approval Required"
+          subject: "⏳ Approval Required - Deploy to DEMO"
 
-          from: Github Actions
+          from: GitHub Actions
 
-          to: yourmail@gmail.com
+          to: hsolanki81815@gmail.com, gulabo81815@gmail.com
 
           html_body: |
-            <h2>Approval Required</h2>
+            <h2>⏳ Approval Required for Deployment</h2>
 
             <p>
             Build completed successfully.
-            Deployment is waiting for approval.
+            Your approval is required to proceed.
             </p>
 
-            <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}">
-              Open Approval Page
+            <table border="1" cellpadding="5" cellspacing="0">
+              <tr><td><b>Environment</b></td><td>DEMO</td></tr>
+              <tr><td><b>Workflow</b></td><td>${{ github.workflow }}</td></tr>
+              <tr><td><b>Triggered By</b></td><td>${{ github.actor }}</td></tr>
+              <tr><td><b>Branch</b></td><td>${{ github.ref_name }}</td></tr>
+              <tr><td><b>Commit ID</b></td><td>${{ github.sha }}</td></tr>
+              <tr><td><b>Repository</b></td><td>${{ github.repository }}</td></tr>
+            </table>
+
+            <br>
+
+            <h3>👇 Action Required</h3>
+
+            <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+               style="background:#2ea44f;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;">
+              Review &amp; Approve Deployment
             </a>
+
+            <br><br>
+
+            <p>
+            ⚠️ If approval is not provided within <b>5 minutes</b>,
+            the workflow will automatically fail.
+            </p>
 
   approval:
     needs: build
@@ -48,8 +83,12 @@ jobs:
     environment:
       name: demo-approval
 
+    timeout-minutes: 5
+
     steps:
-      - run: echo "Approved"
+      - name: Approval Granted
+        run: |
+          echo "Deployment approved"
 
   deploy:
     needs: approval
@@ -57,8 +96,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - run: |
-          echo "Deploying..."
+      - name: Fake Deployment
+        run: |
+          echo "Deploying application..."
           sleep 10
-
-      - run: echo "Deployment completed"
+          echo "Deployment completed successfully"
