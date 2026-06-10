@@ -43,7 +43,7 @@ jobs:
 
           from: GitHub Actions
 
-          to: hsolanki81815@gmail.com,gulabo81815@gmail.com,babitaji@gmail.com
+          to: hsolanki81815@gmail.com,gulabo81815@gmail.com
 
           html_body: |
             <h2>⏳ Approval Required for Deployment</h2>
