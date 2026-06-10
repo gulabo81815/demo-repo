@@ -56,7 +56,6 @@ jobs:
               <tr><td><b>Triggered By</b></td><td>${{ github.actor }}</td></tr>
               <tr><td><b>Branch</b></td><td>${{ github.ref_name }}</td></tr>
               <tr><td><b>Commit ID</b></td><td>${{ github.sha }}</td></tr>
-              <tr><td><b>Repository</b></td><td>${{ github.repository }}</td></tr>
               <tr><td><b>Build Time</b></td><td>${{ env.BUILD_TIME }}</td></tr>
               <tr><td><b>Approval Expires At</b></td><td style="color:red;"><b>${{ env.EXPIRY_TIME }}</b></td></tr>
             </table>
@@ -69,35 +68,53 @@ jobs:
             <br><br>
             <p style="color:red;">
               ⚠️ Approval expires at <b>${{ env.EXPIRY_TIME }}</b>.<br>
-              If not approved in time, the workflow will automatically fail and deployment will be skipped.<br>
+              If not approved in time, the workflow will be automatically cancelled and deployment will be skipped.<br>
               To retry, simply re-run the workflow from GitHub Actions.
             </p>
 
   # ─────────────────────────────────────────────
-  # JOB 2: Approval Gate (5 min timeout)
+  # JOB 2: Auto Cancel after 5 min (runs in parallel with approval gate)
+  # ─────────────────────────────────────────────
+  auto_cancel:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait 5 minutes then cancel workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "⏱️ Auto-cancel timer started. Waiting 5 minutes for approval..."
+          echo "If no approval is received, workflow will be cancelled automatically."
+          sleep 300
+          echo "⏰ 5 minutes elapsed. No approval received. Cancelling workflow..."
+          gh run cancel ${{ github.run_id }} \
+            --repo ${{ github.repository }} \
+            || echo "ℹ️ Workflow already completed — cancel not needed."
+
+  # ─────────────────────────────────────────────
+  # JOB 3: Approval Gate
   # ─────────────────────────────────────────────
   approval:
     needs: build
     runs-on: ubuntu-latest
     environment:
-      name: demo-approval        # ← create this in Settings → Environments
-    timeout-minutes: 5           # ← 5 min no approval = job fails = deploy skipped
+      name: demo-approval
     steps:
       - name: Approval Granted
-        run: echo "✅ Approved! Proceeding to deployment..."
+        run: echo "✅ Deployment approved! Proceeding..."
 
   # ─────────────────────────────────────────────
-  # JOB 3: Deploy (only runs if approval passed)
+  # JOB 4: Deploy (only runs if approval passed)
   # ─────────────────────────────────────────────
   deploy:
-    needs: [approval, build]     # ← needs both so we can use build outputs
+    needs: [approval, build]
     runs-on: ubuntu-latest
     steps:
       - name: Fake Deployment
         run: |
-          echo "Deploying application..."
+          echo "🚀 Deploying application..."
           sleep 5
-          echo "Deployment completed successfully"
+          echo "✅ Deployment completed successfully"
 
       - name: Capture End Time
         if: always()
@@ -124,6 +141,7 @@ jobs:
               <tr><td><b>Environment</b></td><td>${{ env.DEPLOYMENT_ON }}</td></tr>
               <tr><td><b>Triggered By</b></td><td>${{ github.actor }}</td></tr>
               <tr><td><b>Branch</b></td><td>${{ github.ref_name }}</td></tr>
+              <tr><td><b>Commit ID</b></td><td>${{ github.sha }}</td></tr>
               <tr><td><b>Start Time</b></td><td>${{ env.DEPLOY_START }}</td></tr>
               <tr><td><b>End Time</b></td><td>${{ env.DEPLOY_END }}</td></tr>
             </table>
