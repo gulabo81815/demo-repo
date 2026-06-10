@@ -11,15 +11,18 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    outputs:
-      build_time: ${{ steps.capture.outputs.build_time }}
-
     steps:
       - name: Capture Build Time
         id: capture
         run: |
           TIME=$(date '+%d-%b-%Y %I:%M:%S %p UTC')
           echo "build_time=$TIME" >> $GITHUB_OUTPUT
+
+      - name: Calculate Expiry Time
+        id: expiry
+        run: |
+          EXPIRY=$(date -u -d "+5 minutes" '+%d-%b-%Y %I:%M:%S %p UTC')
+          echo "expiry_time=$EXPIRY" >> $GITHUB_OUTPUT
 
       - name: Fake Build
         run: |
@@ -40,7 +43,7 @@ jobs:
 
           from: GitHub Actions
 
-          to: hsolanki81815@gmail.com, gulabo81815@gmail.com, babitaji@gmail.com
+          to: hsolanki81815@gmail.com,gulabo81815@gmail.com,babitaji@gmail.com
 
           html_body: |
             <h2>⏳ Approval Required for Deployment</h2>
@@ -57,11 +60,16 @@ jobs:
               <tr><td><b>Branch</b></td><td>${{ github.ref_name }}</td></tr>
               <tr><td><b>Commit ID</b></td><td>${{ github.sha }}</td></tr>
               <tr><td><b>Repository</b></td><td>${{ github.repository }}</td></tr>
+              <tr><td><b>Approval Expires At</b></td><td>${{ steps.expiry.outputs.expiry_time }}</td></tr>
             </table>
 
             <br>
 
             <h3>👇 Action Required</h3>
+
+            <p>
+            Review the deployment request and approve it from GitHub.
+            </p>
 
             <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                style="background:#2ea44f;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;">
@@ -70,9 +78,18 @@ jobs:
 
             <br><br>
 
-            <p>
-            ⚠️ If approval is not provided within <b>5 minutes</b>,
-            the workflow will automatically fail.
+            <p style="color:red;">
+              ⚠️ This approval request will expire in 5 minutes.
+            </p>
+
+            <p style="color:red;">
+              Expiry Time:
+              <b>${{ steps.expiry.outputs.expiry_time }}</b>
+            </p>
+
+            <p style="color:red;">
+              If approval is not provided before the expiry time,
+              the workflow will automatically fail and deployment will not proceed.
             </p>
 
   approval:
