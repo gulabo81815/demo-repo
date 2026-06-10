@@ -1,5 +1,4 @@
 name: Approval Demo
-
 on:
   workflow_dispatch:
 
@@ -8,26 +7,33 @@ env:
 
 jobs:
 
+  # ─────────────────────────────────────────────
+  # JOB 1: Build + Send Approval Email
+  # ─────────────────────────────────────────────
   build:
     runs-on: ubuntu-latest
-
+    outputs:
+      build_time: ${{ steps.capture.outputs.build_time }}
+      expiry_time: ${{ steps.expiry.outputs.expiry_time }}
     steps:
       - name: Capture Build Time
         id: capture
         run: |
           TIME=$(date '+%d-%b-%Y %I:%M:%S %p UTC')
           echo "build_time=$TIME" >> $GITHUB_OUTPUT
+          echo "BUILD_TIME=$TIME" >> $GITHUB_ENV
 
       - name: Calculate Expiry Time
         id: expiry
         run: |
           EXPIRY=$(date -u -d "+5 minutes" '+%d-%b-%Y %I:%M:%S %p UTC')
           echo "expiry_time=$EXPIRY" >> $GITHUB_OUTPUT
+          echo "EXPIRY_TIME=$EXPIRY" >> $GITHUB_ENV
 
       - name: Fake Build
         run: |
           echo "Building application..."
-          sleep 10
+          sleep 5
           echo "Build completed"
 
       - name: Send Approval Request Email
@@ -38,83 +44,89 @@ jobs:
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
           secure: false
-
-          subject: "⏳ Approval Required - Deploy to DEMO"
-
-          from: GitHub Actions
-
+          subject: "⏳ Approval Required - Deploy to ${{ env.DEPLOYMENT_ON }}"
+          from: "GitHub Actions <${{ secrets.EMAIL_USERNAME }}>"
           to: hsolanki81815@gmail.com,gulabo81815@gmail.com
-
           html_body: |
             <h2>⏳ Approval Required for Deployment</h2>
-
-            <p>
-            Build completed successfully.
-            Your approval is required to proceed.
-            </p>
-
+            <p>Build completed successfully. Your approval is required to proceed.</p>
             <table border="1" cellpadding="5" cellspacing="0">
-              <tr><td><b>Environment</b></td><td>DEMO</td></tr>
+              <tr><td><b>Environment</b></td><td>${{ env.DEPLOYMENT_ON }}</td></tr>
               <tr><td><b>Workflow</b></td><td>${{ github.workflow }}</td></tr>
               <tr><td><b>Triggered By</b></td><td>${{ github.actor }}</td></tr>
               <tr><td><b>Branch</b></td><td>${{ github.ref_name }}</td></tr>
               <tr><td><b>Commit ID</b></td><td>${{ github.sha }}</td></tr>
               <tr><td><b>Repository</b></td><td>${{ github.repository }}</td></tr>
-              <tr><td><b>Approval Expires At</b></td><td>${{ steps.expiry.outputs.expiry_time }}</td></tr>
+              <tr><td><b>Build Time</b></td><td>${{ env.BUILD_TIME }}</td></tr>
+              <tr><td><b>Approval Expires At</b></td><td style="color:red;"><b>${{ env.EXPIRY_TIME }}</b></td></tr>
             </table>
-
             <br>
-
             <h3>👇 Action Required</h3>
-
-            <p>
-            Review the deployment request and approve it from GitHub.
-            </p>
-
             <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                style="background:#2ea44f;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;">
               Review &amp; Approve Deployment
             </a>
-
             <br><br>
-
             <p style="color:red;">
-              ⚠️ This approval request will expire in 5 minutes.
+              ⚠️ Approval expires at <b>${{ env.EXPIRY_TIME }}</b>.<br>
+              If not approved in time, the workflow will automatically fail and deployment will be skipped.<br>
+              To retry, simply re-run the workflow from GitHub Actions.
             </p>
 
-            <p style="color:red;">
-              Expiry Time:
-              <b>${{ steps.expiry.outputs.expiry_time }}</b>
-            </p>
-
-            <p style="color:red;">
-              If approval is not provided before the expiry time,
-              the workflow will automatically fail and deployment will not proceed.
-            </p>
-
+  # ─────────────────────────────────────────────
+  # JOB 2: Approval Gate (5 min timeout)
+  # ─────────────────────────────────────────────
   approval:
     needs: build
-
     runs-on: ubuntu-latest
-
     environment:
-      name: demo-approval
-
-    timeout-minutes: 5
-
+      name: demo-approval        # ← create this in Settings → Environments
+    timeout-minutes: 5           # ← 5 min no approval = job fails = deploy skipped
     steps:
       - name: Approval Granted
-        run: |
-          echo "Deployment approved"
+        run: echo "✅ Approved! Proceeding to deployment..."
 
+  # ─────────────────────────────────────────────
+  # JOB 3: Deploy (only runs if approval passed)
+  # ─────────────────────────────────────────────
   deploy:
-    needs: approval
-
+    needs: [approval, build]     # ← needs both so we can use build outputs
     runs-on: ubuntu-latest
-
     steps:
       - name: Fake Deployment
         run: |
           echo "Deploying application..."
-          sleep 10
+          sleep 5
           echo "Deployment completed successfully"
+
+      - name: Capture End Time
+        if: always()
+        run: |
+          echo "DEPLOY_END=$(date '+%d-%b-%Y %I:%M:%S %p UTC')" >> $GITHUB_ENV
+          echo "DEPLOY_START=${{ needs.build.outputs.build_time }}" >> $GITHUB_ENV
+
+      - name: Send Completion Email
+        if: always()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          secure: false
+          subject: "[${{ job.status }}] Deployment ${{ job.status == 'success' && 'Successful' || 'Failed' }} - ${{ env.DEPLOYMENT_ON }}"
+          from: "GitHub Actions <${{ secrets.EMAIL_USERNAME }}>"
+          to: hsolanki81815@gmail.com,gulabo81815@gmail.com
+          html_body: |
+            <h2>${{ job.status == 'success' && '✅ Deployment Successful' || '❌ Deployment Failed' }}</h2>
+            <p>The deployment workflow has completed ${{ job.status == 'success' && 'successfully' || 'with failures' }}.</p>
+            <table border="1" cellpadding="5" cellspacing="0">
+              <tr><td><b>Environment</b></td><td>${{ env.DEPLOYMENT_ON }}</td></tr>
+              <tr><td><b>Triggered By</b></td><td>${{ github.actor }}</td></tr>
+              <tr><td><b>Branch</b></td><td>${{ github.ref_name }}</td></tr>
+              <tr><td><b>Start Time</b></td><td>${{ env.DEPLOY_START }}</td></tr>
+              <tr><td><b>End Time</b></td><td>${{ env.DEPLOY_END }}</td></tr>
+            </table>
+            <br>
+            <p>${{ job.status == 'success' && '✅ SUCCESS — Please proceed with validation.' || '❌ FAILED — Check the workflow logs.' }}</p>
+            <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}">View Workflow</a>
