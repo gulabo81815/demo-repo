@@ -75,21 +75,21 @@ jobs:
   # ─────────────────────────────────────────────
   # JOB 2: Auto Cancel after 5 min (runs in parallel with approval gate)
   # ─────────────────────────────────────────────
-  auto_cancel:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Wait 5 minutes then cancel workflow
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "⏱️ Auto-cancel timer started. Waiting 5 minutes for approval..."
-          echo "If no approval is received, workflow will be cancelled automatically."
-          sleep 300
-          echo "⏰ 5 minutes elapsed. No approval received. Cancelling workflow..."
-          gh run cancel ${{ github.run_id }} \
-            --repo ${{ github.repository }} \
-            || echo "ℹ️ Workflow already completed — cancel not needed."
+  # auto_cancel:
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Wait 5 minutes then cancel workflow
+  #       env:
+  #         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #       run: |
+  #         echo "⏱️ Auto-cancel timer started. Waiting 5 minutes for approval..."
+  #         echo "If no approval is received, workflow will be cancelled automatically."
+  #         sleep 300
+  #         echo "⏰ 5 minutes elapsed. No approval received. Cancelling workflow..."
+  #         gh run cancel ${{ github.run_id }} \
+  #           --repo ${{ github.repository }} \
+  #           || echo "ℹ️ Workflow already completed — cancel not needed."
 
   # ─────────────────────────────────────────────
   # JOB 3: Approval Gate
