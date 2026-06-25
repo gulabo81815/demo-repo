@@ -1,4 +1,6 @@
-name: Approval Demo
+name: Demo - Release & Commit Info Test
+run-name: Demo run from ${{ github.ref_name }} by @${{ github.actor }}
+
 on:
   workflow_dispatch:
 
@@ -8,27 +10,77 @@ env:
 jobs:
 
   # ─────────────────────────────────────────────
-  # JOB 1: Build + Send Approval Email
+  # JOB 1: Build + Send Started Email
   # ─────────────────────────────────────────────
   build:
     runs-on: ubuntu-latest
     outputs:
       build_time: ${{ steps.capture.outputs.build_time }}
-      expiry_time: ${{ steps.expiry.outputs.expiry_time }}
+      build_time_epoch: ${{ steps.capture.outputs.build_time_epoch }}
+      release_name: ${{ steps.release_info.outputs.release_name }}
+      release_tag: ${{ steps.release_info.outputs.release_tag }}
+      commit_message: ${{ steps.commit_msg.outputs.commit_message }}
     steps:
+
       - name: Capture Build Time
         id: capture
         run: |
           TIME=$(date '+%d-%b-%Y %I:%M:%S %p UTC')
+          EPOCH=$(date +%s)
           echo "build_time=$TIME" >> $GITHUB_OUTPUT
+          echo "build_time_epoch=$EPOCH" >> $GITHUB_OUTPUT
           echo "BUILD_TIME=$TIME" >> $GITHUB_ENV
 
-      - name: Calculate Expiry Time
-        id: expiry
+      # ── Fetch actual commit message via API ──
+      - name: Get Commit Message
+        id: commit_msg
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          EXPIRY=$(date -u -d "+5 minutes" '+%d-%b-%Y %I:%M:%S %p UTC')
-          echo "expiry_time=$EXPIRY" >> $GITHUB_OUTPUT
-          echo "EXPIRY_TIME=$EXPIRY" >> $GITHUB_ENV
+          MSG=$(curl -s \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/commits/${{ github.sha }}" \
+            | jq -r '.commit.message // "Manual Workflow Trigger"')
+
+          # Fallback if empty or null
+          if [ -z "$MSG" ] || [ "$MSG" = "null" ]; then
+            MSG="Manual Workflow Trigger"
+          fi
+
+          # First line only
+          MSG_FIRST_LINE=$(echo "$MSG" | head -n 1)
+
+          echo "commit_message=${MSG_FIRST_LINE}" >> $GITHUB_OUTPUT
+          echo "COMMIT_MESSAGE=${MSG_FIRST_LINE}" >> $GITHUB_ENV
+          echo "Commit Message: ${MSG_FIRST_LINE}"
+
+      # ── Fetch latest GitHub Release name + tag ──
+      - name: Get Latest Release Info
+        id: release_info
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_DATA=$(curl -s \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/latest")
+
+          RELEASE_NAME=$(echo "$RELEASE_DATA" | jq -r '.name // "N/A"')
+          RELEASE_TAG=$(echo "$RELEASE_DATA" | jq -r '.tag_name // "N/A"')
+
+          if [ -z "$RELEASE_NAME" ] || [ "$RELEASE_NAME" = "null" ]; then
+            RELEASE_NAME="N/A"
+          fi
+          if [ -z "$RELEASE_TAG" ] || [ "$RELEASE_TAG" = "null" ]; then
+            RELEASE_TAG="N/A"
+          fi
+
+          echo "release_name=${RELEASE_NAME}" >> $GITHUB_OUTPUT
+          echo "release_tag=${RELEASE_TAG}" >> $GITHUB_OUTPUT
+          echo "RELEASE_NAME=${RELEASE_NAME}" >> $GITHUB_ENV
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_ENV
+          echo "Latest Release: ${RELEASE_NAME} (${RELEASE_TAG})"
 
       - name: Fake Build
         run: |
@@ -36,7 +88,7 @@ jobs:
           sleep 5
           echo "Build completed"
 
-      - name: Send Approval Request Email
+      - name: Send Deployment Started Email
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -44,83 +96,52 @@ jobs:
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
           secure: false
-          subject: "⏳ Approval Required - Deploy to ${{ env.DEPLOYMENT_ON }}"
+          subject: "🚀 Deployment Started - ${{ env.DEPLOYMENT_ON }}"
           from: "GitHub Actions <${{ secrets.EMAIL_USERNAME }}>"
           to: hsolanki81815@gmail.com,gulabo81815@gmail.com
           html_body: |
-            <h2>⏳ Approval Required for Deployment</h2>
-            <p>Build completed successfully. Your approval is required to proceed.</p>
+            <h2>🚀 Deployment Started</h2>
+            <p>A deployment workflow has been initiated.</p>
             <table border="1" cellpadding="5" cellspacing="0">
               <tr><td><b>Environment</b></td><td>${{ env.DEPLOYMENT_ON }}</td></tr>
               <tr><td><b>Workflow</b></td><td>${{ github.workflow }}</td></tr>
               <tr><td><b>Triggered By</b></td><td>${{ github.actor }}</td></tr>
               <tr><td><b>Branch</b></td><td>${{ github.ref_name }}</td></tr>
               <tr><td><b>Commit ID</b></td><td>${{ github.sha }}</td></tr>
-              <tr><td><b>Build Time</b></td><td>${{ env.BUILD_TIME }}</td></tr>
-              <tr><td><b>Approval Expires At</b></td><td style="color:red;"><b>${{ env.EXPIRY_TIME }}</b></td></tr>
+              <tr><td><b>Commit Message</b></td><td>${{ env.COMMIT_MESSAGE }}</td></tr>
+              <tr><td><b>Release Name</b></td><td>${{ env.RELEASE_NAME }}</td></tr>
+              <tr><td><b>Release Tag</b></td><td>${{ env.RELEASE_TAG }}</td></tr>
+              <tr><td><b>Start Time</b></td><td>${{ env.BUILD_TIME }}</td></tr>
             </table>
             <br>
-            <h3>👇 Action Required</h3>
-            <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-               style="background:#2ea44f;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;">
-              Review &amp; Approve Deployment
-            </a>
-            <br><br>
-            <p style="color:red;">
-              ⚠️ Approval expires at <b>${{ env.EXPIRY_TIME }}</b>.<br>
-              If not approved in time, the workflow will be automatically cancelled and deployment will be skipped.<br>
-              To retry, simply re-run the workflow from GitHub Actions.
-            </p>
+            <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}">View Workflow</a>
+            <p>The deployment is currently in progress.</p>
 
   # ─────────────────────────────────────────────
-  # JOB 2: Auto Cancel after 5 min (runs in parallel with approval gate)
-  # ─────────────────────────────────────────────
-  # auto_cancel:
-  #   needs: build
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Wait 5 minutes then cancel workflow
-  #       env:
-  #         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #       run: |
-  #         echo "⏱️ Auto-cancel timer started. Waiting 5 minutes for approval..."
-  #         echo "If no approval is received, workflow will be cancelled automatically."
-  #         sleep 300
-  #         echo "⏰ 5 minutes elapsed. No approval received. Cancelling workflow..."
-  #         gh run cancel ${{ github.run_id }} \
-  #           --repo ${{ github.repository }} \
-  #           || echo "ℹ️ Workflow already completed — cancel not needed."
-
-  # ─────────────────────────────────────────────
-  # JOB 3: Approval Gate
-  # ─────────────────────────────────────────────
-  approval:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: demo-approval
-    steps:
-      - name: Approval Granted
-        run: echo "✅ Deployment approved! Proceeding..."
-
-  # ─────────────────────────────────────────────
-  # JOB 4: Deploy (only runs if approval passed)
+  # JOB 2: Deploy + Send Completion Email
   # ─────────────────────────────────────────────
   deploy:
-    needs: [approval, build]
+    needs: build
     runs-on: ubuntu-latest
     steps:
+
       - name: Fake Deployment
         run: |
           echo "🚀 Deploying application..."
           sleep 5
           echo "✅ Deployment completed successfully"
 
-      - name: Capture End Time
+      - name: Capture End Time & Duration
         if: always()
         run: |
+          END_EPOCH=$(date +%s)
+          START_EPOCH=${{ needs.build.outputs.build_time_epoch }}
+          DURATION=$((END_EPOCH - START_EPOCH))
+          MINUTES=$((DURATION / 60))
+          SECONDS=$((DURATION % 60))
           echo "DEPLOY_END=$(date '+%d-%b-%Y %I:%M:%S %p UTC')" >> $GITHUB_ENV
           echo "DEPLOY_START=${{ needs.build.outputs.build_time }}" >> $GITHUB_ENV
+          echo "DEPLOY_DURATION=${MINUTES}m ${SECONDS}s" >> $GITHUB_ENV
 
       - name: Send Completion Email
         if: always()
@@ -131,7 +152,7 @@ jobs:
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
           secure: false
-          subject: "[${{ job.status }}] Deployment ${{ job.status == 'success' && 'Successful' || 'Failed' }} - ${{ env.DEPLOYMENT_ON }}"
+          subject: "${{ job.status == 'success' && '✅' || '❌' }} Deployment ${{ job.status == 'success' && 'Successful' || 'Failed' }} - ${{ env.DEPLOYMENT_ON }}"
           from: "GitHub Actions <${{ secrets.EMAIL_USERNAME }}>"
           to: hsolanki81815@gmail.com,gulabo81815@gmail.com
           html_body: |
@@ -142,8 +163,12 @@ jobs:
               <tr><td><b>Triggered By</b></td><td>${{ github.actor }}</td></tr>
               <tr><td><b>Branch</b></td><td>${{ github.ref_name }}</td></tr>
               <tr><td><b>Commit ID</b></td><td>${{ github.sha }}</td></tr>
+              <tr><td><b>Commit Message</b></td><td>${{ needs.build.outputs.commit_message }}</td></tr>
+              <tr><td><b>Release Name</b></td><td>${{ needs.build.outputs.release_name }}</td></tr>
+              <tr><td><b>Release Tag</b></td><td>${{ needs.build.outputs.release_tag }}</td></tr>
               <tr><td><b>Start Time</b></td><td>${{ env.DEPLOY_START }}</td></tr>
               <tr><td><b>End Time</b></td><td>${{ env.DEPLOY_END }}</td></tr>
+              <tr><td><b>Total Duration</b></td><td>${{ env.DEPLOY_DURATION }}</td></tr>
             </table>
             <br>
             <p>${{ job.status == 'success' && '✅ SUCCESS — Please proceed with validation.' || '❌ FAILED — Check the workflow logs.' }}</p>
